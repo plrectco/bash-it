@@ -1,0 +1,888 @@
+#! /bin/bash
+#
+# .bash_func
+# Copyright (C) 2017 Hanxiao <hah114@ucsd.edu>
+#
+# Distributed under terms of the MIT license.
+#
+
+INIT_FILE_ROOT_DIR="${HOME}/"
+
+# change name for shell tab
+function nn {
+  if [ -z "$1" ]; then
+    title=${PWD##*/} # current directory
+  else
+    title=$1 # first param
+  fi
+  echo -n -e "\033]0;$title\007"
+}
+
+# generate a backup
+function _backup_realpath
+{
+    pushd "$(dirname "$1")" > /dev/null
+        echo "${PWD}/$(basename "$1")"
+	popd > /dev/null
+}
+function _backup_helper
+{
+    echo -e "${green}[HELP MENU]${endcolor}:\n \
+        <file1> [file2 ..] [explanation] backup file with explanation\n \
+        [-r] <file> reverse backup\n \
+        [-f] force reverse without notification when there is the same copy in direction\n \
+        [-h] show help info\n \
+        [-e] add explanation\n \
+        [-s] show logs\n \
+        [-d] delete backup files in current directory\n \
+        [-c] clean the log file (${INIT_FILE_ROOT_DIR}/.backup.logs)"
+}
+function _backup_remove_log
+{
+    if [[ -f "${INIT_FILE_ROOT_DIR}/.backup.logs" ]]; then
+        rm "${INIT_FILE_ROOT_DIR}/.backup.logs"
+    fi
+    echo "${green}[FINISHED]${endcolor} Log File Cleaned"
+}
+function _backup_show_log
+{
+    vim "${INIT_FILE_ROOT_DIR}/.backup.logs"
+}
+function _backup_delete_current_dir
+{
+    file_list=()
+    count=0
+    while read line; do
+        check_result=$(echo "${line}" | grep "_[0-9]\{8\}_[0-9]\{2\}:[0-9]\{2\}:[0-9]\{2\}\$" | wc -l)
+        if [[ ${check_result} -eq 1 ]]; then
+            file_list=("${file_list[@]}" "${line}")
+            ((count++))
+        fi
+    done < <(ls -a --color=never)
+    if [[ ${count} -eq 0 ]]; then
+        echo "[FINISHED] Nothing to delete"
+    else
+        echo "${red}Deleting: ${endcolor}"
+        for item in "${file_list[@]}"; do
+           echo -e "\t${item}" 
+        done
+        read -rp "Sure to delete? (y/n): " delete_option 
+        delete_option="$(echo "${delete_option}" | tr '[:upper:]' '[:lower:]')"
+        if [[ ${delete_option} == "y" || ${delete_option} == "yes" ]]; then
+            for item in "${file_list[@]}"; do
+               rm -rf "${item}" 
+            done
+        else
+            echo "[ERROR] User quit, exiting..." 1>&2
+        fi
+    fi
+}
+function _backup_op
+{
+    if [[ ! -e "$1" ]]; then
+        echo "[ERROR] ${red}${1}${endcolor} does not exist, exiting.." 1>&2
+        return
+    fi
+    if [[ -L "$1" ]]; then
+        echo "[ERROR] ${red}${1}${endcolor} is a link file, exiting.." 1>&2
+        return
+    fi
+    current_time="$(date +%Y%m%d)_$(date +%T)"
+    absolute_path="$(_backup_realpath "$1")"
+    file_name="$(basename "${absolute_path}")"
+    file_path="$(dirname "${absolute_path}")"
+    dst_file_name="${file_name}"
+    avaliable_check="$(echo "${file_name}" | grep -o "_[0-9]\{8\}_[0-9]\{2\}:[0-9]\{2\}:[0-9]\{2\}\$" | wc -l)"
+    if [[ ${avaliable_check} -eq 1 ]]; then
+        dst_file_name="${file_name:0:$((${#file_name} - 18))}"
+        echo "[INFO] Backing up ${orange}${file_name}${endcolor} with name showing ${orange}${dst_file_name}${endcolor}"
+    fi
+
+    # permission check
+    touch "${file_path}/.tmp_backup_219dsak" > /dev/null
+    if [ -f "${file_path}/.tmp_backup_219dsak" ]; then
+        rm "${file_path}/.tmp_backup_219dsak"
+        backup_file_dir="${file_path}/${dst_file_name}_${current_time}"
+        cp -r "$1" "${backup_file_dir}"
+
+        # get md5
+        if [ -f "$1" ]; then
+            command -v md5sum >/dev/null 2>&1 || md5="md5sum disabled"
+            command -v md5sum >/dev/null 2>&1 && md5=$(md5sum "$1" | awk '{print $1}')
+        else
+            md5="Direction"
+        fi
+
+        # get explanation
+        if [ ! -z "$2" ]; then
+            exp="$2"
+        else
+            exp="No explain. "
+        fi
+
+        echo -e "${file_name}\t${current_time}\t${file_path}\t${md5}\t${exp}\n------" >> "${INIT_FILE_ROOT_DIR}/.backup.logs"
+        echo -e "${green}[FINISHED]${endcolor} ${file_path}/${dst_file_name}_${current_time}"
+    else
+        echo -e "[ERROR] ${red}Permission Denied${endcolor}" 1>&2
+    fi
+}
+function _backup_reverse_op
+{
+    if [[ ! -e "$1" ]]; then
+        echo "[ERROR] ${red}${1}${endcolor} does not exist, exiting.." 1>&2
+        return
+    fi
+    absolute_path="$(_backup_realpath "$1")"
+    file_name="$(basename "${absolute_path}")"
+    file_path="$(dirname "${absolute_path}")"
+    force_option=$2
+
+    avaliable_check="$(echo "${file_name}" | grep -o "_[0-9]\{8\}_[0-9]\{2\}:[0-9]\{2\}:[0-9]\{2\}\$" | wc -l)"
+    if [[ ${avaliable_check} -eq 0 ]]; then
+        echo "[ERROR] ${red}${1}${endcolor} is not a backup file, exiting..." 1>&2
+        return
+    fi
+
+    backup_file_realname="${file_name:0:$((${#file_name} - 18))}"
+    reversed_file_path="${file_path}/${backup_file_realname}"
+    operation_type=0
+    if [[ -e ${reversed_file_path} ]]; then
+        if [[ ${force_option} -eq 0 ]]; then
+            echo -e "[INFO] ${orange}${reversed_file_path}${endcolor} already exists"
+            read -rp "Overwrite it? (y/n): " exist_file_option
+            exist_file_option="$(echo "${exist_file_option}" | tr '[:upper:]' '[:lower:]')"
+            if [[ ${exist_file_option} == "y" || ${exist_file_option} == "yes" ]]; then
+                force_option=1
+            fi
+        fi
+        if [[ ${force_option} -eq 1 ]]; then
+            rm -rf "${reversed_file_path}"
+            mv "${absolute_path}" "${reversed_file_path}"
+            operation_type=1
+        fi
+    else
+        mv "${absolute_path}" "${reversed_file_path}"
+        operation_type=1
+    fi
+    if [[ ${operation_type} -eq 1 ]]; then
+        echo "${green}[FINISHED]${endcolor} ${reversed_file_path}"
+    else
+        echo "[ERROR] User quit, exiting..." 1>&2
+    fi
+}
+function _backup_complete
+{
+    local cur prev  
+    COMP_WORDBREAKS=${COMP_WORDBREAKS//[:=]}
+    prev=${COMP_WORDS[COMP_CWORD-1]}
+    _get_comp_words_by_ref cur
+    COMPREPLY=()
+
+    if [[ ${prev} == "-r" || ${prev} == "-rf" ]]; then
+        count=0
+        while read line; do
+            check_result=$(echo "${line}" | grep "_[0-9]\{8\}_[0-9]\{2\}:[0-9]\{2\}:[0-9]\{2\}\$" | grep -i "^${cur}" | wc -l)
+            if [[ ${check_result} -eq 1 ]]; then
+                line=${line// /\\\ }
+                COMPREPLY=("${COMPREPLY[@]}" "${line}")
+                ((count++))
+            fi
+        done < <(ls -a --color=never)
+        if [[ ${count} -eq 0 ]]; then
+            COMPREPLY=("--- No Backup File ---" "")
+        fi
+    fi
+}
+
+function backup
+{
+    if [[ $# -eq 0 ]]; then
+        _backup_helper
+    fi
+    command -v getopts >/dev/null 2>&1 || { echo "[ERROR] Missing ${red}getopts${endcolor}" 1>&2; return; }
+    command -v basename >/dev/null 2>&1 || { echo "[ERROR] Missing ${red}basename${endcolor}" 1>&2; return; }
+    command -v dirname >/dev/null 2>&1 || { echo "[ERROR] Missing ${red}dirname${endcolor}" 1>&2; return; }
+
+    option_count=0
+    reverse_flag=0
+    force_flag=0
+    explanation=""
+    unset OPTIND
+    while getopts "e:fhcrsd" arg; do
+        case "${arg}" in 
+            h)
+                _backup_helper
+                ((option_count++))
+                ;;
+            c)
+                _backup_remove_log 
+                ((option_count++))
+                ;;
+            s)
+                _backup_show_log 
+                ((option_count++))
+                ;;
+            d)
+                _backup_delete_current_dir
+                ((option_count++))
+                ;;
+            r)
+                reverse_flag=1
+                ;;
+            f)
+                force_flag=1
+                ;;
+            e)
+                explanation="$OPTARG" 
+                ;; 
+            ?)
+                echo "[ERROR] ${red}$1${endcolor} is an illegal option" 1>&2
+                return
+        esac
+    done
+
+    shift $((OPTIND-1))
+    # backup
+    if [[ ${option_count} -eq 0 && ${reverse_flag} -eq 0 ]]; then
+        for item in "${@}"; do
+            _backup_op "${item}" "${explanation}"
+        done
+    fi
+
+    # reverse backup
+    if [[ ${option_count} -eq 0 && ${reverse_flag} -eq 1 ]]; then
+        for item in "${@}"; do
+            _backup_reverse_op "${item}" ${force_flag}
+        done
+    fi
+}
+complete -o bashdefault -o default -F _backup_complete backup 
+
+# redefine pushd and popd
+function pushdd
+{
+    pushd "$1" > /dev/null
+}
+function popdd
+{
+    popd > /dev/null
+}
+
+# git regenerate origin
+function git-regenerate
+{
+    if [ ! -d .git ]; then
+        echo "No git repo found.."
+        return
+    fi
+    if [ ! -f .git/FETCH_HEAD ]; then
+        echo "Please fetch or pull first.."
+        return
+    fi
+
+    read -rp "git name: " git_rege_name
+    read -rsp "git passwd: " git_rege_password
+    echo -ne "\n"
+
+    repo_web=$(awk '{print $NF}' .git/FETCH_HEAD | head -1)
+    git remote rm origin
+    new_web=$(echo "${repo_web}" | sed "s@http\(s\)\?://@https://${git_rege_name}:${git_rege_password}\@@")
+    echo "${new_web}"
+    git remote add origin "${new_web}"
+}
+
+# git open website  
+function git-openwebsite
+{
+    if [[ $(git rev-parse --is-inside-work-tree 2>&1) == "true" ]]; then
+        url=$(git config --get remote.origin.url)
+        if [ "$(uname)" == "Darwin" ]; then
+            open "${url}"
+        elif [ "$(expr substr $(uname -s) 1 5)" == "Linux" ]; then
+            xdg-open "${url}"
+        fi
+    else
+        echo "[ERR] Not a git, quit..." 1>&2
+    fi
+}
+
+# sedding
+function sedding
+{
+    while read data; do
+        echo "${data}" | sed "s@ @\\\ @g;s@\\\$@\\\\\$@g;s@'@\\\\\'@g;s@\"@\\\\\"@g;s@(@\\\(@g;s@)@\\\)@"
+    done
+}
+
+# delete enter
+function de
+{
+    while read data; do
+        tmp=$(echo -n "${data}" | sed "s@\\\$@\\\\\$@g;s@\"@\\\\\"@g")
+        echo -n "\"${tmp}\"" | xsel
+    done
+}
+
+# sync
+function get_pub_name
+{
+    original_name="$1"
+    echo "${original_name// /%20}"
+}
+
+function websync
+{
+    #web="hanxiao.xin"
+    #ip="106.14.7.228"
+    #web="108.61.247.112"
+    #ip="108.61.247.112"
+    web="209.97.160.120"
+    ip="209.97.160.120"
+    user="root"
+    root_dir="/root/01_Project/03_offline-download"
+    tool_dir="${root_dir}/02_tools"
+    file_dir="${root_dir}/01_files"
+    public="public"
+
+    if [ -z "$1" ]; then
+        echo -e "${green}[HELP MENU]${endcolor}:\n \
+            <file>:      upload file to server, if direction, then compress first\n \
+            [-a] <file>: add file to not delete list, thus will not be deleted by [-c]\n \
+            [-c]:        clean all the upload file\n \
+            [-d] <file>: upload the directions dircetly\n \
+            [-m] <file>: modify or regenerate the expire time for the file\n \
+            [ls]:        show all files in web\n \
+            [-expire]:   show all expire files, and their expire time"
+    # cp dir directly
+    elif [ "$1" = "-d" ]; then
+        if [ ! -e "$2" ]; then
+            echo "file not exists!" 1>&2
+        else
+            realname=$(basename "$2")
+            get_pub_name "${web}/${public}/${realname}" | xsel
+            read -rp "Set Valid Time: " valid_time
+            scp -r "${realname}" ${user}@${ip}:${file_dir}
+            ssh ${user}@${ip} "${tool_dir}/websync.sh \"${realname}\" \"${valid_time}\""
+            get_pub_name "${web}/${public}/${realname}"
+        fi
+
+    elif [ "$1" = "-c" ]; then
+        ssh ${user}@${ip} "${tool_dir}/websync.sh -c1"
+        read -rp "Are you sure to delete? [y/n] " answer
+        if [[ ${answer} = "y" ]] || [[ ${answer} = "Y" ]]; then
+            ssh ${user}@${ip} "${tool_dir}/websync.sh -c2"
+        else
+            :;
+        fi
+
+    elif [ "$1" = "-a" ]; then
+        for ((i = 2; i <= $#; i++)); do
+            parse_add=$(eval echo \$$i)
+            file_name=$(basename "${parse_add}")
+            echo "add ${green}${file_name}${endcolor}"
+            ssh ${user}@${ip} "${tool_dir}/websync.sh -a \"${file_name}\"" 
+        done
+
+    elif [ "$1" = "ls" ]; then
+        ssh ${user}@${ip} "${tool_dir}/websync.sh -ls" 
+
+    elif [ "$1" = "-expire" ]; then
+        ssh ${user}@${ip} "${tool_dir}/websync.sh -expire" 
+
+    elif [ "$1" = "-m" ]; then
+        realname=$(basename "$2")
+        read -rp "Set Valid Time: " valid_time
+        ssh ${user}@${ip} "${tool_dir}/websync.sh -m \"${realname}\" \"${valid_time}\""
+        get_pub_name "${web}/${public}/${realname}" | xsel
+        get_pub_name "${web}/${public}/${realname}"
+
+    else
+        if [ ! -e "$1" ]; then
+            echo "file not exists!" 1>&2
+        elif [ -f "$1" ]; then
+            realname=$(basename "$1")
+            get_pub_name "${web}/${public}/${realname}" | xsel
+            read -rp "Set Valid Time: " valid_time
+            scp -r "${realname}" ${user}@${ip}:${file_dir}
+            ssh ${user}@${ip} "${tool_dir}/websync.sh \"${realname}\" \"${valid_time}\""
+            get_pub_name "${web}/${public}/${realname}"
+        elif [ -d "$1" ]; then
+            realname=$(basename "$1")
+            get_pub_name "${web}/${public}/${realname}.zip" | xsel
+            file_name=$(realpath "$1")
+            pushd "$(dirname "${file_name}")" > /dev/null
+            if [ ! -d ~/.tmp_zip ]; then
+                mkdir -p ~/.tmp_zip
+            fi
+            if [ -e ~/.tmp_zip/"${realname}".zip ]; then
+                rm ~/.tmp_zip/"${realname}".zip
+            fi
+            zip -r ~/.tmp_zip/"${realname}".zip "${realname}"
+            popd > /dev/null
+            read -rp "Set Valid Time: " valid_time
+            scp -r ~/.tmp_zip/"${realname}".zip ${user}@${ip}:${file_dir}
+            ssh ${user}@${ip} "${tool_dir}/websync.sh \"${realname}.zip\" \"${valid_time}\""
+            get_pub_name "${web}/${public}/${realname}.zip"
+            rm -r ~/.tmp_zip
+        fi
+    fi    
+}
+
+# offline download
+function offline-download
+{
+    #ip="106.14.7.228"
+    #base_dir="/root/02_Downloads"
+    #ip="108.61.247.112"
+    ip="209.97.160.120"
+
+    base_dir="/root/01_Project/03_offline-download"
+    user="root"
+
+    torrent_dir="${base_dir}/00_torrent/"
+    tool_dir="${base_dir}/02_tools/"
+    
+    if [ -z "$1" ]; then
+        echo -e "${green}[HELP MENU]${endcolor}:\n \
+            <file> download torrent file\n \
+            <link> download link\n \
+            [-s] states of downloading torrents\n \
+            [-c] clear logs\n \
+            [-d] delete current task"
+    elif [ "$1" = "-s" ]; then
+        ssh ${user}@${ip} "${tool_dir}/show_status.sh"
+    elif [ "$1" = "-c" ]; then
+        ssh ${user}@${ip} "${tool_dir}/clean.sh -a"
+        read -rp "Continue? [y/n]" answer
+        if [[ ${answer} = "y" ]]  || [[ ${answer} = "Y" ]]; then
+            ssh ${user}@${ip} "${tool_dir}/clean.sh -c"
+        fi
+    elif [ "$1" = "-d" ]; then
+        ssh ${user}@${ip} "${tool_dir}/stop_current_task.sh"
+    else
+        download_torrent="$1"
+        download_torrent_name=$(basename "${download_torrent}")
+        simplified_torrent_name=$(echo "${download_torrent_name}" | strings | tr -d "\n" | tr -d " " | tr -d "\t")
+        p1=$(sed -n "1p" "${HOME}"/.ssh/offline-code)
+        if [ -f "${download_torrent}" ]; then
+            p2=$(sed -n "2p" "${HOME}"/.ssh/offline-code)
+            encry_name=$(echo "${simplified_torrent_name}" | base64 | tr "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz1234567890+" "${p1}")
+            gbase64 "${download_torrent}" | tr "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz1234567890+" "${p2}" > "${HOME}/${encry_name}"
+            scp -r "${HOME}/${encry_name}" ${user}@${ip}:"${torrent_dir}/${encry_name}"
+            ssh -f -n ${user}@${ip} "${tool_dir}/start_download_torrent.sh ${torrent_dir}${encry_name} &"
+            rm "${download_torrent}"
+            rm "${HOME}/${encry_name}"
+        else
+            encry_link=$(echo "${download_torrent}" | base64 | tr "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz1234567890+" "${p1}")
+            ssh -f -n ${user}@${ip} "${tool_dir}/start_download_link.sh ${encry_link} &"
+        fi
+    fi
+}
+
+# Decrypt
+function decrypt
+{
+    p1=$(sed -n "3p" "${HOME}"/.ssh/offline-code)
+    decrypt_file="$1"
+    decrypt_file_name=$(basename "${decrypt_file}" | sed "s@.gpg@@")
+    decrypt_file_path=$(dirname "${decrypt_file}")
+    decrypt_encry_name=$(echo "${decrypt_file_name}" | tr "${p1}" "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz1234567890+" | gbase64 -d)
+    mv "${decrypt_file}" "${decrypt_file_path}/${decrypt_encry_name}"
+
+    decrypt_file="${decrypt_file_path}/${decrypt_encry_name}"
+    decrypt_file_name=$(basename "${decrypt_file}")
+    extension="${decrypt_file_name##*.}"
+    decrypt_file_name_without_extension="${decrypt_file_name%.*}"
+    decrypt_real_name="${decrypt_file_name_without_extension%.*}"
+
+    if [[ ! ${extension} = "gpg" ]]; then
+        echo "not exact file!"
+    else
+        gpg "${decrypt_file}"
+        pushd "${decrypt_file_path}" > /dev/null
+        unzip "${decrypt_file_name_without_extension}"
+        popd >/dev/null
+        rm "${decrypt_file_name_without_extension}"
+        read -rp "delete download gpg file? [y/n] " answer
+        if [[ ${answer} = "y" ]] || [[ ${answer} = "Y" ]]; then
+            rm "${decrypt_file}"
+        fi
+        echo -e "\n${decrypt_file_path}/${decrypt_real_name}"
+    fi
+}
+
+# Use autojump as a part of cd command
+function relpath()
+{ 
+    python -c "import os.path; print os.path.relpath('$1','${2:-$PWD}')"
+}
+if [[ $(command -v j) ]]; then
+    function cd
+    {
+        if [[ ${#} -gt 1 || -e "$1" || "$1" == "-" ]]; then
+            #command cd "$@"
+            pushd "$@" > /dev/null
+        elif [[ "$1" == "=" ]]; then
+            popd > /dev/null
+        else
+            p1="${PWD}"
+            j "$@"
+            relpath "${PWD}" "${p1}"
+        fi
+    }
+    function cdc
+    {
+        if [[ ${#} -gt 1 || -e "$1" || "$1" == "-" ]]; then
+            command cd "$@"
+        else
+            jc "$@"
+        fi
+    }
+    function cdo
+    {
+        if [[ ${#} -gt 1 || -e "$1" || "$1" == "-" ]]; then
+            if [ "$(uname)" == "Darwin" ]; then
+                pushd "$@" > /dev/null
+                open . 
+                popd >/dev/null
+            elif [ "$(expr substr $(uname -s) 1 5)" == "Linux" ]; then
+                pushd "$@" > /dev/null
+                xdg-open .
+                popd >/dev/null
+            else
+                jo "$@"
+            fi
+        else
+            jo "$@"
+        fi
+    }
+fi
+
+# du better use
+function du-auto
+{
+    width=${1:-34}
+    du -sb -- * | sort -n | python3 -c "
+import sys, os
+width = int(sys.argv[-1])
+width = width if width < 120 else 120
+unit = ['KB', 'MB', 'GB', 'TB']
+unit_split = [0, 0, 0, 0]
+name_type = ['', '\033[1;34m', '\033[1;36m', '\033[1;32m']
+end_type = ['', '\033[0m', '\033[0m', '\033[0m']
+sys.stdout.write('+' + '-' * width + '-' * 19 + '+' + '\n')
+sys.stdout.write('|  ' + '   Size  ' + '  |  ' + '%16s'%('File') + ' '*(width - 13) + '|\n')
+for line in sys.stdin:
+    unit_count = 0;
+    content = line.rstrip().split('\t')
+    size = float(content[0]) / 1024.0
+    while True:
+        if (size / 1024.0 <= 1):
+            break
+        size /= 1024.0
+        unit_count += 1
+    show_size = \"%6.1f %s\"%(size, unit[unit_count])
+    name = '\t'.join(content[1:])
+
+    file_type = 0;
+    if os.path.islink(name):
+        file_type = 2
+    elif os.path.isdir(name):
+        file_type = 1
+    elif os.path.isfile(name) and os.access(name, os.X_OK):
+        file_type = 3
+
+    if unit_split[unit_count] == 0:
+        sys.stdout.write('|' + '-' * width + '-' * 19 + '|\n')
+        unit_split[unit_count] = 1
+    chinese_character = 0;
+    for item in name:
+        if item <= '\u9fa5' and item >= '\u4e00':
+            chinese_character += 1
+    if len(name) + chinese_character > width + 1:
+        ext = os.path.splitext(name)
+        if chinese_character:
+            name = name[:int(width / 2) - len(ext[-1]) - 1] + '.. ' + ext[-1]
+        else:
+            name = name[:width - len(ext[-1]) - 1] + '.. ' + ext[-1]
+    chinese_character = 0;
+    for item in name:
+        if item <= '\u9fa5' and item >= '\u4e00':
+            chinese_character += 1
+    sys.stdout.write('|  ' + show_size + '  |  ' + name_type[file_type] + '%0*s'%(-width - 3 + chinese_character, name) + end_type[file_type] + '|' + '\n')
+sys.stdout.write('+' + '-' * width + '-' * 19 + '+' + '\n')
+" "${width}"
+}
+
+# use function to open web
+function _web_complete
+{
+    local HOST cur
+    COMPREPLY=()
+    _get_comp_words_by_ref cur
+    HOST="$(grep -v ^\# "${INIT_FILE_ROOT_DIR}/web_list" | awk -F '|' '{print $1}')"
+    COMPREPLY=( $( compgen -W "$HOST" -- "$cur" ) )
+}
+function _web_google_search
+{
+    _web_google_search_url="https://www.google.com/search?q="
+    for word in $@; do
+        word=${word//+/%2B}
+        _web_google_search_url="${_web_google_search_url}+${word}"
+    done
+    echo "[SUC] ${green}Google Search${endcolor}: $*"
+}
+function _web_yd_search
+{
+    _web_yd_search_url="https://dict.youdao.com/w/eng/"
+    for word in $@; do
+        _web_yd_search_url="${_web_yd_search_url}${word}%20"
+    done
+    _web_yd_search_url=${_web_yd_search_url/%\%20/}
+    echo "[SUC] ${green}Youdao Search${endcolor}: $*"
+}
+function web
+{
+    item="$1"
+    website_addr=$(grep -v ^\# "${INIT_FILE_ROOT_DIR}/web_list" | grep "^${item}|" | awk -F '|' '{print $2}')
+    open="False"
+    if [[ -z $1 ]]; then
+        echo "web list dir: ${INIT_FILE_ROOT_DIR}/web_list" 1>&2
+    elif [[ ! -z ${website_addr} && -z $2 ]]; then
+        open="True"
+        echo "[SUC] ${green}${item}${endcolor}: ${website_addr}" 
+    elif [[ ! -z ${website_addr} && ! -z $2 ]]; then
+        #web specific
+        open="True"
+        if [[ ${item} == "google" ]]; then
+            shift
+            _web_google_search "$@"
+            website_addr="${_web_google_search_url}"
+        elif [[ ${item} == "yd" ]]; then
+            shift
+            _web_yd_search "$@"
+            website_addr="${_web_yd_search_url}"
+        else
+            _web_google_search "$@"
+            website_addr="${_web_google_search_url}"
+        fi
+    elif [[ -z ${website_addr} ]]; then
+        open="True"
+        _web_google_search "$@"
+        website_addr="${_web_google_search_url}"
+    fi
+
+    # open by default
+    if [[ ${open} == "True" ]]; then
+        if [ "$(uname)" == "Darwin" ]; then
+            open "${website_addr}"
+        elif [ "$(expr substr $(uname -s) 1 5)" == "Linux" ]; then
+            xdg-open "${website_addr}"
+        fi
+    fi
+}
+complete -F _web_complete web 
+
+# automatically unzip
+function q-extract
+{
+    file_name="$1"
+    if [[ -f ${file_name} ]] ; then
+        case ${file_name} in
+            *.tar.bz2)   tar -xvjf "${file_name}"    ;;
+            *.tar.gz)    tar -xvzf "${file_name}"    ;;
+            *.tar.xz)    tar -xvJf "${file_name}"    ;;
+            *.bz2)       bunzip2 "${file_name}"     ;;
+            *.rar)       rar x "${file_name}"       ;;
+            *.gz)        gunzip "${file_name}"      ;;
+            *.tar)       tar -xvf "${file_name}"     ;;
+            *.tbz2)      tar -xvjf "${file_name}"    ;;
+            *.tgz)       tar -xvzf "${file_name}"    ;;
+            *.zip)       unzip "${file_name}"       ;;
+            *.Z)         uncompress "${file_name}"  ;;
+            *.7z)        7z x "${file_name}"        ;;
+            *)           echo "don't know how to extract ${file_name}..." ;;
+        esac
+    else
+        echo "${file_name} is not a valid file!"
+    fi
+}
+
+# automatically zip
+function q-compress
+{
+    if [[ -n "$1" ]] ; then
+        FILE=$1
+        case $FILE in
+            *.tar) shift && tar -cf "$FILE" "$*" ;;
+            *.tar.bz2) shift && tar -cjf "$FILE" "$*" ;;
+            *.tar.xz) shift && tar -cJf "$FILE" "$*" ;;
+            *.tar.gz) shift && tar -czf "$FILE" "$*" ;;
+            *.tgz) shift && tar -czf "$FILE" "$*" ;;
+            *.zip) shift && zip -r "$FILE" "$*" ;;
+            *.rar) shift && rar "$FILE" "$*" ;;
+        esac
+    else
+        echo "usage: q-compress <foo.tar.gz> ./foo ./bar"
+    fi
+}
+
+# Calculate sum, average, max, min for files
+function cal-sum
+{
+    if [[ $1 == "l" ]]; then
+        awk '
+            BEGIN {
+                OFS=" ";ORS=" "
+            }
+            {   
+                for (i = 1; i <= NF; i++)
+                    {a[i] += $i;} 
+            }
+            END {
+                for (i = 1; i <= NF; i++)
+                    {print a[i]}
+                printf "\n"
+            }
+        ' "$2"
+    elif [[ $1 == "-" ]]; then
+        awk '
+            BEGIN {
+                OFS=" ";ORS=" "
+            }
+            {   
+                sum = 0;
+                for (i = 1; i <= NF; i++)
+                    {sum += $i;} 
+                print sum;
+                printf "\n"
+            }
+        ' "$2"
+    fi
+}
+
+function cal-avg
+{
+    if [[ $1 == "l" ]]; then
+        awk '
+            BEGIN {
+                OFS=" ";ORS=" "
+            }
+            {   
+                for (i = 1; i <= NF; i++)
+                    {a[i] += $i;} 
+            }
+            END {
+                for (i = 1; i <= NF; i++)
+                    {print a[i]/NR}
+                printf "\n"
+            }
+        ' "$2"
+    elif [[ $1 == "-" ]]; then
+        awk '
+            BEGIN {
+                OFS=" ";ORS=" "
+            }
+            {   
+                sum = 0;
+                for (i = 1; i <= NF; i++)
+                    {sum += $i;} 
+                print sum/NF;
+                printf "\n"
+            }
+        ' "$2"
+    fi
+}
+
+function cal-no-first
+{
+    if [[ $1 == "l" ]]; then
+        awk '
+            BEGIN {
+                OFS=" ";ORS=" "
+            }
+            {
+                for (i = 2; i <= NF; i++)
+                    {print $i}
+                printf "\n"
+            }
+        ' "$2"
+    elif [[ $1 == "-" ]]; then
+        awk 'NR != 1' "$2"
+    fi
+}
+
+function cal-max
+{
+    if [[ $1 == "l" ]]; then
+        awk '
+            BEGIN {
+                OFS=" ";ORS=" "
+            }
+            {   
+                if (NR == 1)
+                {
+                    for (i = 1; i <= NF; i++)
+                        {a[i] = -2147483648}
+                }
+                for (i = 1; i <= NF; i++)
+                    {a[i]=($i>a[i])? $i:a[i]}
+            }
+            END {
+                for (i = 1; i <= NF; i++)
+                    {print a[i]}
+                printf "\n"
+            }
+        ' "$2"
+    elif [[ $1 == "-" ]]; then
+        awk '
+            BEGIN {
+                OFS=" ";ORS=" "
+            }
+            {   
+                max = -2147483648
+                for (i = 1; i <= NF; i++)
+                    {max=($i>max)? $i:max}
+                print max;
+                printf "\n"
+            }
+        ' "$2"
+    fi
+}
+function cal-min
+{
+    if [[ $1 == "l" ]]; then
+        awk '
+            BEGIN {
+                OFS=" ";ORS=" "
+            }
+            {   
+                if (NR == 1)
+                {
+                    for (i = 1; i <= NF; i++)
+                        {a[i] = 2147483648}
+                }
+                for (i = 1; i <= NF; i++)
+                    {a[i]=($i<a[i])? $i:a[i]}
+            }
+            END {
+                for (i = 1; i <= NF; i++)
+                    {print a[i]}
+                printf "\n"
+            }
+        ' "$2"
+    elif [[ $1 == "-" ]]; then
+        awk '
+            BEGIN {
+                OFS=" ";ORS=" "
+            }
+            {   
+                max = 2147483648
+                for (i = 1; i <= NF; i++)
+                    {max=($i<max)? $i:max}
+                print max;
+                printf "\n"
+            }
+        ' "$2"
+    fi
+}
