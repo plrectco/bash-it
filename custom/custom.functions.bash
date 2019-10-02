@@ -886,3 +886,22 @@ function cal-min
         ' "$2"
     fi
 }
+
+function work 
+{
+  tmx2 new-session -A -s ${1:-work};
+}
+
+function screenshot() {
+  local server="${SNIPIT_SERVER:-https://screenshot.googleplex.com/upload}"
+  local file="${TEMP:-/tmp}/snipit_temp_$$.png"
+ 
+  gnome-screenshot -a --file="${file}"
+  xclip -selection clipboard -t image/png -i "${file}"
+ 
+  # Send
+  echo "Sending image to server..."
+  uri=$(curl -sF "imagedata=@$file" $server )
+  echo "Local copy: ${file}"
+  echo "Web url: ${uri}"
+}
