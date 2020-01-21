@@ -10,14 +10,17 @@ SCM_HG_CHAR="${bold_red}☿${normal}"
 #Mysql Prompt
 export MYSQL_PS1="(\u@\h) [\d]> "
 
+my_title() {
 case $TERM in
         xterm*)
-        TITLEBAR="\[\033]0;\w\007\]"
+        echo -en "\[\033]0;${TERMINAL_TITLE}\a\007\]"
         ;;
         *)
-        TITLEBAR=""
+        echo -en ""
         ;;
 esac
+
+}
 
 PS3=">> "
 
@@ -91,10 +94,10 @@ prompt() {
 
     # nice prompt
     case "`id -u`" in
-      0) PS1="${TITLEBAR}┌─$(my_ve)$(chroot)[$my_ps_root][$my_ps_host_root]$(modern_scm_prompt)$(__my_rvm_ruby_version)[${cyan}\w${normal}]$(is_vim_shell)[$(my_time)]
+      0) PS1="$(my_title)┌─$(my_ve)$(chroot)[$my_ps_root][$my_ps_host_root]$(modern_scm_prompt)$(__my_rvm_ruby_version)[${cyan}\w${normal}]$(is_vim_shell)[$(my_time)]
 └─▪ "
         ;;
-        *) PS1="${TITLEBAR}┌─$(my_ve)$(chroot)[$my_ps_user][$my_ps_host]$(modern_scm_prompt)$(__my_rvm_ruby_version)[${cyan}\w${normal}]$(is_vim_shell)[$(my_time)]
+      *) PS1="$(my_title)┌─$(my_ve)$(chroot)[$my_ps_user][$my_ps_host]$(modern_scm_prompt)$(__my_rvm_ruby_version)[${cyan}\w${normal}]$(is_vim_shell)[$(my_time)]
 └─▪ "
         ;;
     esac
