@@ -53,4 +53,5 @@ function hgsync {
   fi
 }
 
-
+alias pa=prodaccess
+alias reviral_regtest=/google/data/ro/teams/video-ads-engprod/reviral_regtest.sh

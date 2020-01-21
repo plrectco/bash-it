@@ -34,7 +34,6 @@ elif [ "$(expr substr $(uname -s) 1 5)" == "Linux" ]; then
     alias egrep='egrep --color=auto'
 
     alias tmux="tmux -2"   
-    alias pprof="google-pprof"
     alias dstatio="dstat -d -n --top-io --disk-util"
 
 elif [ "$(expr substr $(uname -s) 1 10)" == "MINGW32_NT" ]; then
