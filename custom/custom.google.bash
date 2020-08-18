@@ -40,6 +40,7 @@ function hgd {
   else 
     g4d $1 2> /dev/null || hg citc $1 && g4d $1 
   fi
+  set_title $1
 }
 
 complete -F _google_choose_client_name_auto_complete hgd
@@ -53,5 +54,14 @@ function hgsync {
   fi
 }
 
+function hgamend {
+  hg amend
+  hg evolve
+  hg uploadall
+}
+
+
 alias pa=prodaccess
 alias reviral_regtest=/google/data/ro/teams/video-ads-engprod/reviral_regtest.sh
+
+export EXP=experimental/users/xyharry
