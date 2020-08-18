@@ -907,7 +907,6 @@ function screenshot() {
 }
 
 function set_title() {
-  ORIG=$PS1
-  TITLE="\e]2;$@\a"
-  PS1=${ORIG}${TITLE}
+  # It is used to generate ps1, currently only available in theme zork.
+  export TERMINAL_TITLE=${1}
 }
